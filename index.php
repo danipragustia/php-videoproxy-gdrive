@@ -4,6 +4,10 @@ declare(strict_types=1);
 error_reporting(0);
 
 function cache_path(string $id) : string {
+	if (!file_exists('_cache')) {
+		mkdir('_cache', 0777);
+	}
+
 	if (strlen($id) == 33) {
 		return '_cache/' . hash('sha256',$id, false);
 	} else {
@@ -29,6 +33,19 @@ function write_data(string $id) {
 		$sources_list = array();
 		$ar_list = array();
 		$cookies = '';
+
+		// Check whenever file was available or not
+		$ch = curl_init('https://drive.google.com/get_video_info?docid=' . $id);
+		curl_setopt_array($ch,array(
+			CURLOPT_FOLLOWLOCATION => true,
+			CURLOPT_RETURNTRANSFER => 1
+		));
+		$x = curl_exec($ch);
+		parse_str($x,$x);
+		if ($x['status'] == 'fail') {
+			return null;
+		}
+		curl_close($ch);
 		
 		// Fetch Google Drive File
 		$ch = curl_init('https://drive.google.com/get_video_info?docid=' . $id);
@@ -38,7 +55,8 @@ function write_data(string $id) {
 			CURLOPT_HEADER => 1
 		));
 		$result = curl_exec($ch);
-		
+		curl_close($ch);
+
 		// Get Cookies
 		preg_match_all('/^Set-Cookie:\s*([^;]*)/mi', $result, $matches);
 		$cookies = array();
@@ -109,6 +127,7 @@ function write_data(string $id) {
 		curl_setopt($ch, CURLOPT_FOLLOWLOCATION, false);
 		curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 		$result = curl_exec($ch);
+		curl_close($ch);
 		if (preg_match('~Location: (.*)~i', $result, $match)) {
 			$thumbnail = trim($match[1]);
 		} else {
@@ -192,7 +211,6 @@ function fetch_video(array $data) : int {
 
 }
 
-
 if (isset($_GET['id'])) {
 	
 	$fdata = read_data($_GET['id']);
@@ -216,18 +234,25 @@ if (isset($_GET['id'])) {
 				if (is_array($fdata)) { // Check whenver data on file was array
 			
 					$reso = $_GET['stream'];
-					foreach($fdata['sources'] as $x) {
-					
-						if ($x['resolution'] == $_GET['stream']) {
-							fetch_video(array(
-								'content-length' => $x['content-length'],
-								'src' => $x['src'],
-								'cookie' => $fdata['cookies']
-							));
-							break;
+						
+						if ($reso == 'thumbnail') {
+							
+							header('Location:' . $fdata['thumbnail']);
+						
+						} else {
+
+							foreach($fdata['sources'] as $x) {
+								if ($x['resolution'] == $_GET['stream']) {
+									fetch_video(array(
+										'content-length' => $x['content-length'],
+										'src' => $x['src'],
+										'cookie' => $fdata['cookies']
+									));
+									break;
+								}
+							}
+
 						}
-					
-					}
 					
 				} else { // If not remove it and tell file was corrupt
 				
@@ -243,7 +268,6 @@ if (isset($_GET['id'])) {
 			die('Invalid file.');
 			
 		}
-		
 		
 	} else {
 		
