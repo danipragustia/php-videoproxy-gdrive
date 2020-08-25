@@ -8,10 +8,10 @@ function cache_path(string $id) : string {
 		mkdir('_cache', 0777);
 	}
 
-	if (strlen($id) == 33) {
-		return '_cache/' . hash('sha256',$id, false);
-	} else {
+	if (strlen($id) == 64) {
 		return '_cache/' . $id;
+	} else {
+		return '_cache/' . hash('sha256',$id, false);
 	}
 }
 
@@ -270,9 +270,9 @@ if (isset($_GET['id'])) {
 		}
 		
 	} else {
-		
-		if (strlen($_GET['id']) == 33) { // Check if File ID have 33 Length (Google Drive ID)
-			
+
+		if (strlen($_GET['id']) < 64) {
+
 			if ($fdata !== null) { // Check whenever data was created before
 				
 				header('Content-Type: application/json');
@@ -298,10 +298,11 @@ if (isset($_GET['id'])) {
 				}
 			
 			}
-			
-		}
 		
+		}
+
 	}
+	
 }
 
 ?>
