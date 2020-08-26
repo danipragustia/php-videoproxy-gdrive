@@ -17,7 +17,8 @@ function cache_path(string $id) : string {
 
 function read_data(string $id) {
 	$fpath = cache_path($id);
-	if ($fhandle = fopen($fpath,'r')) {
+	$fhandle = fopen($fpath,'r');
+	if ($fhandle && filesize($fpath) > 0) {
 		$content = fread($fhandle,filesize($fpath));
 		fclose($fhandle);
 		return json_decode($content,true);
@@ -27,7 +28,15 @@ function read_data(string $id) {
 }
 
 function write_data(string $id) {
-	$fpath = cache_path($id);
+	$driveId = $id;
+	if (strlen($driveId) == 64) {
+		if ($fdata = read_data($id)) {
+			if ($fdata['id']) {
+				$driveId = encryption('decrypt', $fdata['id']);
+			}
+		}
+	}
+	$fpath = cache_path($driveId);
 	if ($fhandle = fopen($fpath,'w')) {
 		
 		$sources_list = array();
@@ -35,7 +44,7 @@ function write_data(string $id) {
 		$cookies = '';
 
 		// Check whenever file was available or not
-		$ch = curl_init('https://drive.google.com/get_video_info?docid=' . $id);
+		$ch = curl_init('https://drive.google.com/get_video_info?docid=' . $driveId);
 		curl_setopt_array($ch,array(
 			CURLOPT_FOLLOWLOCATION => true,
 			CURLOPT_RETURNTRANSFER => 1
@@ -43,12 +52,14 @@ function write_data(string $id) {
 		$x = curl_exec($ch);
 		parse_str($x,$x);
 		if ($x['status'] == 'fail') {
+			curl_close($ch);
+			fclose($fhandle);
 			return null;
 		}
 		curl_close($ch);
 		
 		// Fetch Google Drive File
-		$ch = curl_init('https://drive.google.com/get_video_info?docid=' . $id);
+		$ch = curl_init('https://drive.google.com/get_video_info?docid=' . $driveId);
 		curl_setopt_array($ch,array(
 			CURLOPT_FOLLOWLOCATION => true,
 			CURLOPT_RETURNTRANSFER => 1,
@@ -122,7 +133,7 @@ function write_data(string $id) {
 		}
 		
 		// Get thumbnail Image
-		$ch = curl_init('https://drive.google.com/thumbnail?authuser=0&sz=w9999&id=' . $id);
+		$ch = curl_init('https://drive.google.com/thumbnail?authuser=0&sz=w9999&id=' . $driveId);
 		curl_setopt($ch, CURLOPT_HEADER, true);
 		curl_setopt($ch, CURLOPT_FOLLOWLOCATION, false);
 		curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
@@ -138,11 +149,13 @@ function write_data(string $id) {
 		fwrite($fhandle, json_encode(array(
 			'thumbnail' => $thumbnail,
 			'cookies' => $cookies,
-			'sources' => $sources_list
+			'sources' => $sources_list,
+			'id' => encryption('encrypt', $driveId)
 		)));
 		fclose($fhandle);
 		return array(
-			'hash' => hash('sha256', $id, false),
+			'status' => 200,
+			'hash' => hash('sha256', $driveId, false),
 			'sources' => $ar_list
 		); // Serve as JSON
 		
@@ -211,6 +224,83 @@ function fetch_video(array $data) : int {
 
 }
 
+function stream($fdata) {
+	if (is_array($fdata)) { // Check whenver data on file was array
+			
+		$reso = $_GET['stream'];
+			
+		if ($reso == 'thumbnail') {
+			
+			header('Location:' . $fdata['thumbnail']);
+		
+		} else {
+
+			foreach($fdata['sources'] as $x) {
+				if ($x['resolution'] == $_GET['stream']) {
+					fetch_video(array(
+						'content-length' => $x['content-length'],
+						'src' => $x['src'],
+						'cookie' => $fdata['cookies']
+					));
+					break;
+				}
+			}
+
+		}
+		
+	} else { // If not remove it and tell file was corrupt
+	
+		unlink(cache_path($_GET['id']));
+		header('Content-Type: application/json');
+		die(json_encode(array(
+			'status' => 413,
+			'error' => 'File was corrupt, please re-generate file.'
+		)));
+	
+	}
+}
+
+/**
+ * PHP encrypt and decrypt
+ *
+ * Simple method to encrypt or decrypt a plain text string initialization
+ * vector(IV) has to be the same when encrypting and decrypting in PHP 5.4.9.
+ *
+ * @link http://naveensnayak.wordpress.com/2013/03/12/simple-php-encrypt-and-decrypt/
+ * 
+ * Reference: https://jonlabelle.com/snippets/view/php/php-encrypt-and-decrypt
+ *
+ * @param string $action Acceptable values are `encrypt` or `decrypt`.
+ * @param string $string The string value to encrypt or decrypt.
+ * @return string
+ */
+function encryption($action, $string)
+{
+  $output = false;
+ 
+  $encrypt_method = "AES-256-CBC";
+  $secret_key = 'This is my secret key';
+  $secret_iv = 'This is my secret iv';
+ 
+  // hash
+  $key = hash('sha256', $secret_key);
+ 
+  // iv - encrypt method AES-256-CBC expects 16 bytes - else you will get a
+  // warning
+  $iv = substr(hash('sha256', $secret_iv), 0, 16);
+ 
+  if ($action == 'encrypt') {
+    $output = openssl_encrypt($string, $encrypt_method, $key, 0, $iv);
+    $output = base64_encode($output);
+  } else {
+    if ($action == 'decrypt') {
+      $output = openssl_decrypt(base64_decode($string), $encrypt_method, $key, 0, $iv);
+    }
+  }
+ 
+  return $output;
+}
+
 if (isset($_GET['id'])) {
 	
 	$fdata = read_data($_GET['id']);
@@ -218,63 +308,55 @@ if (isset($_GET['id'])) {
 	if (isset($_GET['stream'])) {
 		
 		if ($fdata !== null) {
-			
-			if (time()-filemtime(cache_path($_GET['id'])) > 3 * 3600) { // Check if file aleardy 3 hours
+
+			// Set default cached time out for 15 minutes
+			// We do this in case that the video is still processing
+			// and has only just 1 resolution, eg. 360p
+			// With 15 minutes we can update the resolution of the videos
+			// after being processed
+			$timeout = 900;
+
+			// If sources length is more than 1, set cached time out for 3 hours
+			if (count($fdata['sources']) > 1) {
+				$timeout = 3 * 3600;
+			}
+
+			if (time()-filemtime(cache_path($_GET['id'])) > $timeout) { // Check cached time out
 				
 				$fres = write_data($_GET['id']);
 				
 				if ($fres !== null) {
-					echo $fres;
+					
+					stream($fdata);
+
 				} else {
-					die('Failed write data');
+					header('Content-Type: application/json');
+					die(json_encode(array(
+						'status' => 412,
+						'error' => 'Failed write data'
+					)));
 				}
 			
 			} else {
 				
-				if (is_array($fdata)) { // Check whenver data on file was array
-			
-					$reso = $_GET['stream'];
-						
-						if ($reso == 'thumbnail') {
-							
-							header('Location:' . $fdata['thumbnail']);
-						
-						} else {
-
-							foreach($fdata['sources'] as $x) {
-								if ($x['resolution'] == $_GET['stream']) {
-									fetch_video(array(
-										'content-length' => $x['content-length'],
-										'src' => $x['src'],
-										'cookie' => $fdata['cookies']
-									));
-									break;
-								}
-							}
-
-						}
-					
-				} else { // If not remove it and tell file was corrupt
-				
-					unlink(cache_path($_GET['id']));
-					die('File was corrupt, please re-generate file.');
-				
-				}
+				stream($fdata);
 				
 			}
 			
 		} else { // If not cache file was missing or expired
 			
-			die('Invalid file.');
+			header('Content-Type: application/json');
+			die(json_encode(array(
+				'status' => 414,
+				'error' => 'Invalid file.'
+			)));
 			
 		}
 		
 	} else {
 
 		if (strlen($_GET['id']) < 64) {
-
 			if ($fdata !== null) { // Check whenever data was created before
-				
 				header('Content-Type: application/json');
 				$ar_list = array();
 				
@@ -283,6 +365,7 @@ if (isset($_GET['id'])) {
 				}
 				
 				echo json_encode(array(
+					'status' => 200,
 					'hash' => hash('sha256', $_GET['id'], false),
 					'sources' => $ar_list
 				)); // Server as JSON
@@ -294,7 +377,11 @@ if (isset($_GET['id'])) {
 					header('Content-Type: application/json');
 					echo json_encode($fres);  // Server as JSON
 				} else {
-					die('Failed write data');
+					header('Content-Type: application/json');
+					die(json_encode(array(
+						'status' => 412,
+						'error' => 'Failed write data.'
+					)));
 				}
 			
 			}
