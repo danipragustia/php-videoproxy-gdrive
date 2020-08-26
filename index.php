@@ -333,7 +333,7 @@ if (isset($_GET['id'])) {
 	
     } else {
 
-	if (strlen($_GET['id']) < 64) {
+	if (in_array(strlen($_GET['id']), range(28,33))) {
 	    if ($fdata !== null) { // Check whenever data was created before
 		header('Content-Type: application/json');
 		$ar_list = array();
