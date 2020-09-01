@@ -12,4 +12,4 @@ After that, navigate `index.php?id=[HASH_CODE]&stream=[RESOLUTION]` for example 
 To get thumbnail image simply by pass `thumbnail` to stream paramter on url.
 
 ## License
-MIT
+GNU AGPLv3
