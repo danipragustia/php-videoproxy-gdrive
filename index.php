@@ -3,6 +3,14 @@
 declare(strict_types=1);
 error_reporting(0);
 
+// Change as your require
+function get_proxy() : array {
+    return [
+	'ip' => '127.0.0.1:6000',
+	'auth' => ''
+    ];
+}
+
 function cache_path(string $id) : string {
     if (!file_exists('_cache')) {
 	mkdir('_cache', 0777);
@@ -46,22 +54,42 @@ function write_data(string $id) {
 	// Check whenever file was available or not
 	$ch = curl_init('https://drive.google.com/get_video_info?docid=' . $driveId);
 	curl_setopt_array($ch,array(
-	    CURLOPT_FOLLOWLOCATION => true,
+	    CURLOPT_FOLLOWLOCATION => 1,
 	    CURLOPT_RETURNTRANSFER => 1
 	));
 	$x = curl_exec($ch);
 	parse_str($x,$x);
 	if ($x['status'] == 'fail') {
 	    curl_close($ch);
-	    fclose($fhandle);
-	    return null;
+
+	    // Use Proxy Instead Direct
+	    $ch = curl_init('https://drive.google.com/get_video_info?docid=' . $driveId);
+	    $proxy = get_proxy()
+
+	    curl_setopt_array($ch,array(
+		CURLOPT_PROXY => $proxy['ip'],
+		CURLOPT_FOLLOWLOCATION => 1,
+		CURLOPT_RETURNTRANSFER => 1
+	    ));
+	    if ($proxy['auth'] !== '') {
+		curl_setopt($ch, CURLOPT_PROXYUSERPWD, $proxyList['auth'])
+	    }
+	    
+	    $x = curl_exec($ch);
+	    parse_str($x,$x);
+	    if ($x['status'] == 'fail') {
+		curl_close($ch);
+		fclose($fhandle);
+		return null;
+	    }
+	    
 	}
 	curl_close($ch);
 	
 	// Fetch Google Drive File
 	$ch = curl_init('https://drive.google.com/get_video_info?docid=' . $driveId);
 	curl_setopt_array($ch,array(
-	    CURLOPT_FOLLOWLOCATION => true,
+	    CURLOPT_FOLLOWLOCATION => 1,
 	    CURLOPT_RETURNTRANSFER => 1,
 	    CURLOPT_HEADER => 1
 	));
@@ -103,15 +131,15 @@ function write_data(string $id) {
 	    $curl = curl_init();
 	    curl_setopt_array($curl, array(
 		CURLOPT_URL => substr($source, strpos($source, "|") + 1),
-		CURLOPT_HEADER => true,
+		CURLOPT_HEADER => 1,
 		CURLOPT_CONNECTTIMEOUT => 0,
 		CURLOPT_TIMEOUT => 1000,
-		CURLOPT_FRESH_CONNECT => true,
+		CURLOPT_FRESH_CONNECT => 1,
 		CURLOPT_SSL_VERIFYPEER => 0,
-		CURLOPT_NOBODY => true,
+		CURLOPT_NOBODY => 1,
 		CURLOPT_VERBOSE => 1,
-		CURLOPT_RETURNTRANSFER => true,
-		CURLOPT_FOLLOWLOCATION => true,
+		CURLOPT_RETURNTRANSFER => 1,
+		CURLOPT_FOLLOWLOCATION => 1,
 		CURLOPT_HTTPHEADER => array(
 		    'Connection: keep-alive',
 		    'Cookie: DRIVE_STREAM=' . $cookies['DRIVE_STREAM']
@@ -134,9 +162,9 @@ function write_data(string $id) {
 	
 	// Get thumbnail Image
 	$ch = curl_init('https://drive.google.com/thumbnail?authuser=0&sz=w9999&id=' . $driveId);
-	curl_setopt($ch, CURLOPT_HEADER, true);
-	curl_setopt($ch, CURLOPT_FOLLOWLOCATION, false);
-	curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+	curl_setopt($ch, CURLOPT_HEADER, 1);
+	curl_setopt($ch, CURLOPT_FOLLOWLOCATION, 1);
+	curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
 	$result = curl_exec($ch);
 	curl_close($ch);
 	if (preg_match('~Location: (.*)~i', $result, $match)) {
@@ -206,9 +234,9 @@ function fetch_video(array $data) : int {
 	CURLOPT_URL => $data['src'],
 	CURLOPT_CONNECTTIMEOUT => 0,
 	CURLOPT_TIMEOUT => 1000,
-	CURLOPT_RETURNTRANSFER => true,
-	CURLOPT_FOLLOWLOCATION => true,
-	CURLOPT_FRESH_CONNECT => true,
+	CURLOPT_RETURNTRANSFER => 1,
+	CURLOPT_FOLLOWLOCATION => 1,
+	CURLOPT_FRESH_CONNECT => 1,
 	CURLOPT_HTTPHEADER => $headers
     ));
     
