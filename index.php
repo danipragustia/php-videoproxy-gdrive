@@ -48,16 +48,16 @@ function write_data(string $id) {
     $fpath = cache_path($driveId);
     if ($fhandle = fopen($fpath,'w')) {
 	
-	$sources_list = array();
-	$ar_list = array();
+	$sources_list = [];
+	$ar_list = [];
 	$cookies = '';
 
 	// Check whenever file was available or not
 	$ch = curl_init('https://drive.google.com/get_video_info?docid=' . $driveId);
-	curl_setopt_array($ch,array(
+	curl_setopt_array($ch,[
 	    CURLOPT_FOLLOWLOCATION => 1,
 	    CURLOPT_RETURNTRANSFER => 1
-	));
+	]);
 	$x = curl_exec($ch);
 	parse_str($x,$x);
 	if ($x['status'] == 'fail') {
@@ -67,10 +67,10 @@ function write_data(string $id) {
 	    $ch = curl_init('https://drive.google.com/get_video_info?docid=' . $driveId);
 	    $proxy = get_proxy()
 
-	    curl_setopt_array($ch,array(
+	    curl_setopt_array($ch,[
 		CURLOPT_FOLLOWLOCATION => 1,
 		CURLOPT_RETURNTRANSFER => 1
-	    ));
+	    ]);
 
 	    // Check if proxy present
 	    if ($proxy['ip'] !== '') {
@@ -101,17 +101,17 @@ function write_data(string $id) {
 	
 	// Fetch Google Drive File
 	$ch = curl_init('https://drive.google.com/get_video_info?docid=' . $driveId);
-	curl_setopt_array($ch,array(
+	curl_setopt_array($ch,[
 	    CURLOPT_FOLLOWLOCATION => 1,
 	    CURLOPT_RETURNTRANSFER => 1,
 	    CURLOPT_HEADER => 1
-	));
+	]);
 	$result = curl_exec($ch);
 	curl_close($ch);
 
 	// Get Cookies
 	preg_match_all('/^Set-Cookie:\s*([^;]*)/mi', $result, $matches);
-	$cookies = array();
+	$cookies = [];
 	foreach($matches[1] as $item) {
 	    parse_str($item, $cookie);
 	    $cookies = array_merge($cookies, $cookie);
@@ -142,7 +142,7 @@ function write_data(string $id) {
 	    
 	    // Get Content-Length of sources
 	    $curl = curl_init();
-	    curl_setopt_array($curl, array(
+	    curl_setopt_array($curl, [
 		CURLOPT_URL => substr($source, strpos($source, "|") + 1),
 		CURLOPT_HEADER => 1,
 		CURLOPT_CONNECTTIMEOUT => 0,
@@ -153,21 +153,21 @@ function write_data(string $id) {
 		CURLOPT_VERBOSE => 1,
 		CURLOPT_RETURNTRANSFER => 1,
 		CURLOPT_FOLLOWLOCATION => 1,
-		CURLOPT_HTTPHEADER => array(
+		CURLOPT_HTTPHEADER => [
 		    'Connection: keep-alive',
 		    'Cookie: DRIVE_STREAM=' . $cookies['DRIVE_STREAM']
-		)
-	    ));
+		]
+	    ]);
 	    
 	    curl_exec($curl);
 	    $content_length = curl_getinfo($curl, CURLINFO_CONTENT_LENGTH_DOWNLOAD);
 	    curl_close($curl);
 	    
-	    array_push($sources_list, array(
+	    array_push($sources_list, [
 		'resolution' => $resolution,
 		'src' => $x,
-		'content-length' => $content_length)
-	    );
+		'content-length' => $content_length
+	    ]);
 	    
 	    array_push($ar_list, $resolution);
 	    
@@ -187,18 +187,18 @@ function write_data(string $id) {
 	}
 	
 	// Write to file
-	fwrite($fhandle, json_encode(array(
+	fwrite($fhandle, json_encode([
 	    'thumbnail' => $thumbnail,
 	    'cookies' => $cookies,
 	    'sources' => $sources_list,
 	    'id' => enc('encrypt', $driveId)
-	)));
+	]));
 	fclose($fhandle);
-	return array(
+	return [
 	    'status' => 200,
 	    'hash' => hash('sha256', $driveId, false),
 	    'sources' => $ar_list
-	); // Serve as JSON
+	]; // Serve as JSON
 	
     } else {
 	
@@ -210,10 +210,10 @@ function write_data(string $id) {
 function fetch_video(array $data) : int {
     
     $content_length = $data['content-length'];
-    $headers = array(
+    $headers = [
 	'Connection: keep-alive',
 	'Cookie: DRIVE_STREAM=' . $data['cookie']['DRIVE_STREAM']
-    );
+    ];
     
     if (isset($_SERVER['HTTP_RANGE'])) {
 	
@@ -243,7 +243,7 @@ function fetch_video(array $data) : int {
     
     $ch = curl_init();
     
-    curl_setopt_array($ch, array(
+    curl_setopt_array($ch, [
 	CURLOPT_URL => $data['src'],
 	CURLOPT_CONNECTTIMEOUT => 0,
 	CURLOPT_TIMEOUT => 1000,
@@ -251,7 +251,7 @@ function fetch_video(array $data) : int {
 	CURLOPT_FOLLOWLOCATION => 1,
 	CURLOPT_FRESH_CONNECT => 1,
 	CURLOPT_HTTPHEADER => $headers
-    ));
+    ]);
     
     curl_setopt($ch, CURLOPT_WRITEFUNCTION, function($curl, $body) {
 	echo $body;
@@ -278,11 +278,11 @@ function stream($fdata) {
 
 	    foreach($fdata['sources'] as $x) {
 		if ($x['resolution'] == $_GET['stream']) {
-		    fetch_video(array(
+		    fetch_video([
 			'content-length' => $x['content-length'],
 			'src' => $x['src'],
 			'cookie' => $fdata['cookies']
-		    ));
+		    ]);
 		    break;
 		}
 	    }
@@ -293,10 +293,10 @@ function stream($fdata) {
 	
 	unlink(cache_path($_GET['id']));
 	header('Content-Type: application/json');
-	die(json_encode(array(
+	die(json_encode([
 	    'status' => 413,
 	    'error' => 'File was corrupt, please re-generate file.'
-	)));
+	]));
 	
     }
 }
@@ -350,10 +350,10 @@ if (isset($_GET['id'])) {
 
 		} else {
 		    header('Content-Type: application/json');
-		    die(json_encode(array(
+		    die(json_encode([
 			'status' => 412,
 			'error' => 'Failed write data'
-		    )));
+		    ]));
 		}
 		
 	    } else {
@@ -365,10 +365,10 @@ if (isset($_GET['id'])) {
 	} else { // If not cache file was missing or expired
 	    
 	    header('Content-Type: application/json');
-	    die(json_encode(array(
+	    die(json_encode([
 		'status' => 414,
 		'error' => 'Invalid file.'
-	    )));
+	    ]));
 	    
 	}
 	
@@ -377,17 +377,17 @@ if (isset($_GET['id'])) {
 	if (in_array(strlen($_GET['id']), range(28,33))) {
 	    if ($fdata !== null) { // Check whenever data was created before
 		header('Content-Type: application/json');
-		$ar_list = array();
+		$ar_list = [];
 		
 		foreach($fdata['sources'] as $x) {
 		    array_push($ar_list,$x['resolution']);
 		}
 		
-		echo json_encode(array(
+		echo json_encode([
 		    'status' => 200,
 		    'hash' => hash('sha256', $_GET['id'], false),
 		    'sources' => $ar_list
-		)); // Server as JSON
+		]); // Server as JSON
 		
 	    } else {
 		
@@ -397,10 +397,10 @@ if (isset($_GET['id'])) {
 		    echo json_encode($fres);  // Server as JSON
 		} else {
 		    header('Content-Type: application/json');
-		    die(json_encode(array(
+		    die(json_encode([
 			'status' => 412,
 			'error' => 'Failed write data.'
-		    )));
+		    ]));
 		}
 		
 	    }
