@@ -48,9 +48,7 @@ function write_data(string $id) {
     $fpath = cache_path($driveId);
     if ($fhandle = fopen($fpath,'w')) {
 	
-	$sources_list = [];
 	$ar_list = [];
-	$cookies = '';
 
 	// Check whenever file was available or not
 	$ch = curl_init('https://drive.google.com/get_video_info?docid=' . $driveId);
@@ -97,6 +95,7 @@ function write_data(string $id) {
 	    }
 	    
 	}
+	
 	curl_close($ch);
 	
 	// Fetch Google Drive File
@@ -111,73 +110,67 @@ function write_data(string $id) {
 
 	// Get Cookies
 	preg_match_all('/^Set-Cookie:\s*([^;]*)/mi', $result, $matches);
-	$cookies = [];
-	foreach($matches[1] as $item) {
-	    parse_str($item, $cookie);
-	    $cookies = array_merge($cookies, $cookie);
-	}
 	
 	// Parse Resolution
 	parse_str($result,$data);
 	$sources = explode(',',$data['fmt_stream_map']);
 	$fname = $data['title'];
-	foreach($sources as $source){
-	    
-	    switch ((int)substr($source, 0, 2)) {
+	$content = array_map(function($x) use ($matches) {
+            switch((int)substr($x, 0, 2)) {
 		case 18:
-		    $resolution = '360p';
-		    break;
-		case 59:
-		    $resolution = '480p';
+		    $res =  '360p';
 		    break;
 		case 22:
-		    $resolution = '720p';
+		    $res = '720p';
 		    break;
 		case 37:
-		    $resolution = '1080p';
+		    $res =  '1080p';
 		    break;
+		case 59:
+		    $res =  '480p';
+		    break;
+            }
+
+	    array_push($ar_list,$res);
+            $src = substr($x,strpos($x, '|') + 1);
+
+            if (filter_var($src, FILTER_VALIDATE_URL, FILTER_FLAG_PATH_REQUIRED)) {
+		$ch = curl_init(substr($x, strpos($x, '|') + 1));
+		curl_setopt_array($ch, [
+                    CURLOPT_HEADER > 1,
+                    CURLOPT_CONNECTTIMEOUT => 0,
+                    CURLOPT_TIMEOUT => 1000, // 1 sec
+                    CURLOPT_NOBODY => 1,
+                    CURLOPT_RETURNTRANSFER => 1,
+                    CURLOPT_FOLLOWLOCATION => 1,
+                    CURLOPT_HTTPHEADER => [
+			'Connection: keep-alive',
+			'Cookie: ' . $matches[1][0]
+                    ]
+		]);
+
+		$result = curl_exec($ch);
+		$length = curl_getinfo($ch, CURLINFO_CONTENT_LENGTH_DOWNLOAD);
+		curl_close($ch);
+
+		// Make sure the link was return the size of resolution
+		return (isset($res,$length) ? [
+                    'resolution' => $res,
+                    'src' => substr($x, strpos($x, '|') + 1),
+                    'content-length' => $length
+		] : []);
+
 	    }
-	    
-	    $x = substr($source, strpos($source, "|") + 1);
-	    
-	    // Get Content-Length of sources
-	    $curl = curl_init();
-	    curl_setopt_array($curl, [
-		CURLOPT_URL => substr($source, strpos($source, "|") + 1),
-		CURLOPT_HEADER => 1,
-		CURLOPT_CONNECTTIMEOUT => 0,
-		CURLOPT_TIMEOUT => 1000,
-		CURLOPT_FRESH_CONNECT => 1,
-		CURLOPT_SSL_VERIFYPEER => 0,
-		CURLOPT_NOBODY => 1,
-		CURLOPT_VERBOSE => 1,
-		CURLOPT_RETURNTRANSFER => 1,
-		CURLOPT_FOLLOWLOCATION => 1,
-		CURLOPT_HTTPHEADER => [
-		    'Connection: keep-alive',
-		    'Cookie: DRIVE_STREAM=' . $cookies['DRIVE_STREAM']
-		]
-	    ]);
-	    
-	    curl_exec($curl);
-	    $content_length = curl_getinfo($curl, CURLINFO_CONTENT_LENGTH_DOWNLOAD);
-	    curl_close($curl);
-	    
-	    array_push($sources_list, [
-		'resolution' => $resolution,
-		'src' => $x,
-		'content-length' => $content_length
-	    ]);
-	    
-	    array_push($ar_list, $resolution);
-	    
-	}
+            
+        }, explode(',',$data['fmt_stream_map']));
 	
 	// Get thumbnail Image
 	$ch = curl_init('https://drive.google.com/thumbnail?authuser=0&sz=w9999&id=' . $driveId);
-	curl_setopt($ch, CURLOPT_HEADER, 1);
-	curl_setopt($ch, CURLOPT_FOLLOWLOCATION, 1);
-	curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+	curl_setopt_array($ch,[
+	    CURLOPT_HEADER => 1,
+	    CURLOPT_FOLLOWLOCATION => 1,
+	    CURLOPT_RETURNTRANSFER => 1
+	]);
 	$result = curl_exec($ch);
 	curl_close($ch);
 	if (preg_match('~Location: (.*)~i', $result, $match)) {
@@ -189,8 +182,8 @@ function write_data(string $id) {
 	// Write to file
 	fwrite($fhandle, json_encode([
 	    'thumbnail' => $thumbnail,
-	    'cookies' => $cookies,
-	    'sources' => $sources_list,
+	    'cookies' => $matches[1][0],
+	    'sources' => $content,
 	    'id' => enc('encrypt', $driveId)
 	]));
 	fclose($fhandle);
