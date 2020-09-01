@@ -7,6 +7,7 @@ error_reporting(0);
 function get_proxy() : array {
     return [
 	'ip' => '127.0.0.1:6000',
+	'type' => 'socks5',
 	'auth' => ''
     ];
 }
@@ -67,12 +68,24 @@ function write_data(string $id) {
 	    $proxy = get_proxy()
 
 	    curl_setopt_array($ch,array(
-		CURLOPT_PROXY => $proxy['ip'],
 		CURLOPT_FOLLOWLOCATION => 1,
 		CURLOPT_RETURNTRANSFER => 1
 	    ));
-	    if ($proxy['auth'] !== '') {
-		curl_setopt($ch, CURLOPT_PROXYUSERPWD, $proxyList['auth'])
+
+	    // Check if proxy present
+	    if ($proxy['ip'] !== '') {
+		curl_setopt($ch, CURLOPT_PROXY => $proxy['ip']);
+
+		// Check if proxy need auth
+		if ($proxy['auth'] !== '') {
+		    curl_setopt($ch, CURLOPT_PROXYUSERPWD, $proxyList['auth']);
+		}
+
+		// Check if proxy type was SOCKS5
+		if ($proxy['type'] == 'socks5') {
+		    curl_setopt($ch, CURLOPT_PROXYTYPE, CURLPROXY_SOCKS5);
+		}
+		
 	    }
 	    
 	    $x = curl_exec($ch);
