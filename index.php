@@ -1,13 +1,13 @@
 <?php
 
 declare(strict_types=1);
-error_reporting(0);
+//error_reporting(0);
 
 // Change as your require
 function get_proxy() : array {
     return [
-	'ip' => '127.0.0.1:6000',
-	'type' => 'socks5',
+	'ip' => '',
+	'type' => '',
 	'auth' => ''
     ];
 }
@@ -63,7 +63,7 @@ function write_data(string $id) {
 
 	    // Use Proxy Instead Direct
 	    $ch = curl_init('https://drive.google.com/get_video_info?docid=' . $driveId);
-	    $proxy = get_proxy()
+	    $proxy = get_proxy();
 
 	    curl_setopt_array($ch,[
 		CURLOPT_FOLLOWLOCATION => 1,
@@ -72,7 +72,7 @@ function write_data(string $id) {
 
 	    // Check if proxy present
 	    if ($proxy['ip'] !== '') {
-		curl_setopt($ch, CURLOPT_PROXY => $proxy['ip']);
+		curl_setopt($ch, CURLOPT_PROXY, $proxy['ip']);
 
 		// Check if proxy need auth
 		if ($proxy['auth'] !== '') {
@@ -110,12 +110,12 @@ function write_data(string $id) {
 
 	// Get Cookies
 	preg_match_all('/^Set-Cookie:\s*([^;]*)/mi', $result, $matches);
-	
+
 	// Parse Resolution
 	parse_str($result,$data);
 	$sources = explode(',',$data['fmt_stream_map']);
 	$fname = $data['title'];
-	$content = array_map(function($x) use ($matches) {
+	$content = array_map(function($x) use ($matches, $ar_list) {
             switch((int)substr($x, 0, 2)) {
 		case 18:
 		    $res =  '360p';
@@ -205,7 +205,7 @@ function fetch_video(array $data) : int {
     $content_length = $data['content-length'];
     $headers = [
 	'Connection: keep-alive',
-	'Cookie: DRIVE_STREAM=' . $data['cookie']['DRIVE_STREAM']
+	'Cookie: ' . $data['cookie']
     ];
     
     if (isset($_SERVER['HTTP_RANGE'])) {
@@ -259,7 +259,7 @@ function fetch_video(array $data) : int {
 }
 
 function stream($fdata) {
-    if (is_array($fdata)) { // Check whenver data on file was array
+    if (is_array($fdata)) { // Check whenever data on file was array
 	
 	$reso = $_GET['stream'];
 	
@@ -322,9 +322,9 @@ function enc($action, $string) {
 
 if (isset($_GET['id'])) {
     
-    $fdata = read_data($_GET['id']);
-    
     if (isset($_GET['stream'])) {
+
+	$fdata = read_data($_GET['id']);
 	
 	if ($fdata !== null) {
 
@@ -332,7 +332,7 @@ if (isset($_GET['id'])) {
 	       Set default cached time out for 15 minutes
 	       We do this in case that the video is still processing and has only just 1 resolution, eg. 360p
 	       With 15 minutes we can update the resolution of the videos after being processed
-	    */
+	     */
 	    if (time()-filemtime(cache_path($_GET['id'])) > (count($fdata['sources']) > 1 ? 3 * 3600 : 900)) { // Check cached timeout
 		
 		$fres = write_data($_GET['id']);
