@@ -1,7 +1,7 @@
 <?php
 
 declare(strict_types=1);
-//error_reporting(0);
+error_reporting(0);
 
 // Change as your require
 function get_proxy() : array {
@@ -76,7 +76,7 @@ function write_data(string $id) {
 
 		// Check if proxy need auth
 		if ($proxy['auth'] !== '') {
-		    curl_setopt($ch, CURLOPT_PROXYUSERPWD, $proxyList['auth']);
+		    curl_setopt($ch, CURLOPT_PROXYUSERPWD, $proxy['auth']);
 		}
 
 		// Check if proxy type was SOCKS5
@@ -115,7 +115,7 @@ function write_data(string $id) {
 	parse_str($result,$data);
 	$sources = explode(',',$data['fmt_stream_map']);
 	$fname = $data['title'];
-	$content = array_map(function($x) use ($matches, $ar_list) {
+	$content = array_map(function($x) use ($matches) {
             switch((int)substr($x, 0, 2)) {
 		case 18:
 		    $res =  '360p';
@@ -130,8 +130,6 @@ function write_data(string $id) {
 		    $res =  '480p';
 		    break;
             }
-
-	    array_push($ar_list,$res);
             $src = substr($x,strpos($x, '|') + 1);
 
             if (filter_var($src, FILTER_VALIDATE_URL, FILTER_FLAG_PATH_REQUIRED)) {
@@ -186,7 +184,10 @@ function write_data(string $id) {
 	    'sources' => $content,
 	    'id' => enc('encrypt', $driveId)
 	]));
-	fclose($fhandle);
+    fclose($fhandle);
+    $ar_list = array_map(function($res) {
+        return $res['resolution'];
+    }, $content);
 	return [
 	    'status' => 200,
 	    'hash' => hash('sha256', $driveId, false),
