@@ -3,6 +3,10 @@ Simple Implementation to proxy video from Google Drive File
 
 There no any update for this, unless important want like bug and essential features.
 
+## Requirements
+- PHP 7.4+
+- cURL, json, and openssl PHP Extension (it should be installed by default)
+
 ## How to use
 
 Navigate `index.php?id=[YOUR_GOOGLE_DRIVE_FILE_ID]` and it will return hash code and resolution.
