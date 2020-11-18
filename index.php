@@ -12,16 +12,14 @@ function get_proxy() : array {
     ];
 }
 
-function cache_path(string $id) : string {
-    if (!file_exists('_cache')) {
-	mkdir('_cache', 0777);
-    }
+function set_header(array $header) : bool {
+    array_map(fn($x) => header($x), $header);
+    return true;
+}
 
-    if (strlen($id) == 64) {
-	return '_cache/' . $id;
-    } else {
-	return '_cache/' . hash('sha256',$id, false);
-    }
+function cache_path(string $id) : string {
+    !file_exists('_cache') && mkdir('_cache', 0777);
+    return '_cache/' . (strlen($id) === 64 ? $id : hash('sha256',$id, false));
 }
 
 function read_data(string $id) {
@@ -38,13 +36,9 @@ function read_data(string $id) {
 
 function write_data(string $id) {
     $driveId = $id;
-    if (strlen($driveId) == 64) {
-	if ($fdata = read_data($id)) {
-	    if ($fdata['id']) {
-		$driveId = enc('decrypt', $fdata['id']);
-	    }
-	}
-    }
+    
+    (strlen($driveId) === 64 && $fdata = read_data($id)) && $fdata['id'] && $driveId = enc('decrypt', $fdata['id']);
+    
     $fpath = cache_path($driveId);
     if ($fhandle = fopen($fpath,'w')) {
 	
@@ -58,7 +52,8 @@ function write_data(string $id) {
 	]);
 	$x = curl_exec($ch);
 	parse_str($x,$x);
-	if ($x['status'] == 'fail') {
+	
+	if ($x['status'] === 'fail') {
 	    curl_close($ch);
 
 	    // Use Proxy Instead Direct
@@ -88,6 +83,8 @@ function write_data(string $id) {
 	    
 	    $x = curl_exec($ch);
 	    parse_str($x,$x);
+
+	    // If fail using proxy
 	    if ($x['status'] == 'fail') {
 		curl_close($ch);
 		fclose($fhandle);
@@ -118,16 +115,16 @@ function write_data(string $id) {
 	$content = array_map(function($x) use ($matches) {
             switch((int)substr($x, 0, 2)) {
 		case 18:
-		    $res =  '360p';
+		    $res = '360p';
 		    break;
 		case 22:
 		    $res = '720p';
 		    break;
 		case 37:
-		    $res =  '1080p';
+		    $res = '1080p';
 		    break;
 		case 59:
-		    $res =  '480p';
+		    $res = '480p';
 		    break;
             }
             $src = substr($x,strpos($x, '|') + 1);
@@ -171,6 +168,7 @@ function write_data(string $id) {
 	]);
 	$result = curl_exec($ch);
 	curl_close($ch);
+	
 	if (preg_match('~Location: (.*)~i', $result, $match)) {
 	    $thumbnail = trim($match[1]);
 	} else {
@@ -184,10 +182,12 @@ function write_data(string $id) {
 	    'sources' => $content,
 	    'id' => enc('encrypt', $driveId)
 	]));
-    fclose($fhandle);
-    $ar_list = array_map(function($res) {
-        return $res['resolution'];
-    }, $content);
+	fclose($fhandle);
+	
+	$ar_list = array_map(function($res) {
+            return $res['resolution'];
+	}, $content);
+	
 	return [
 	    'status' => 200,
 	    'hash' => hash('sha256', $driveId, false),
@@ -224,10 +224,12 @@ function fetch_video(array $data) : int {
     }
     
     if ($http == 1) {
-	
-	header('HTTP/1.1 206 Partial Content');
-	header('Accept-Ranges: bytes'); 
-	header('Content-Range: bytes ' . $initial . '-' . ($initial + $final) . '/' . $data['content-length']);
+
+	set_header([
+	    'HTTP/1.1 206 Partial Content',
+	    'Accept-Ranges: bytes',
+	    'Content-Range: bytes ' . $initial . '-' . ($initial + $final) . '/' . $data['content-length']
+	]);
 	
     } else {
 	
@@ -251,9 +253,11 @@ function fetch_video(array $data) : int {
 	echo $body;
 	return strlen($body);
     });
-    
-    header('Content-Type: video/mp4');
-    header('Content-length: ' . $content_length);
+
+    set_header([
+	'Content-Type: video/mp4',
+	'Content-length: ' . $content_length
+    ]);
     
     curl_exec($ch);
 
@@ -295,7 +299,7 @@ function stream($fdata) {
     }
 }
 
-function enc($action, $string) {
+function enc($action, $string) : string {
     $output = false;
     
     $encrypt_method = "AES-256-CBC";
@@ -309,14 +313,9 @@ function enc($action, $string) {
     // warning
     $iv = substr(hash('sha256', $secret_iv), 0, 16);
     
-    if ($action == 'encrypt') {
-	$output = openssl_encrypt($string, $encrypt_method, $key, 0, $iv);
-	$output = base64_encode($output);
-    } else {
-	if ($action == 'decrypt') {
-	    $output = openssl_decrypt(base64_decode($string), $encrypt_method, $key, 0, $iv);
-	}
-    }
+    return ($action == 'encrypt')
+	 ? base64_encode(openssl_encrypt($string, $encrypt_method, $key, 0, $iv))
+	 : $action === 'decrypt' && openssl_decrypt(base64_decode($string), $encrypt_method, $key, 0, $iv);
     
     return $output;
 }
@@ -343,11 +342,13 @@ if (isset($_GET['id'])) {
 		    stream($fdata);
 
 		} else {
+		    
 		    header('Content-Type: application/json');
 		    die(json_encode([
 			'status' => 412,
 			'error' => 'Failed write data'
 		    ]));
+		    
 		}
 		
 	    } else {
@@ -370,8 +371,9 @@ if (isset($_GET['id'])) {
 
 	if (in_array(strlen($_GET['id']), range(28,33))) {
 	    $fdata = read_data($_GET['id']);
+	    header('Content-Type: application/json');
 	    if ($fdata !== null) { // Check whenever data was created before
-		header('Content-Type: application/json');
+
 		$ar_list = [];
 		
 		foreach($fdata['sources'] as $x) {
@@ -387,23 +389,17 @@ if (isset($_GET['id'])) {
 	    } else {
 		
 		$fres = write_data($_GET['id']); // Write it to file
-		if ($fres !== null) {
-		    header('Content-Type: application/json');
-		    echo json_encode($fres);  // Server as JSON
-		} else {
-		    header('Content-Type: application/json');
-		    die(json_encode([
-			'status' => 412,
-			'error' => 'Failed write data.'
-		    ]));
-		}
+		echo json_encode(($fres !== null) ? $fres : [
+		    'status' => 412,
+		    'error' => 'Failed write data.'
+		]);
 		
 	    }
-	    
+
 	}
 
     }
-    
+
 }
 
 ?>
