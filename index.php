@@ -13,7 +13,7 @@ function get_proxy() : array {
 }
 
 function set_header(array $header) : bool {
-    array_map(fn($x) => header($x), $header);
+    array_map(function($x) { header($x); }, $header);
     return true;
 }
 
@@ -110,6 +110,9 @@ function write_data(string $id) {
 
 	// Parse Resolution
 	parse_str($result,$data);
+	if (!isset($data['fmt_stream_map'])) {
+	    return null;
+	}
 	$sources = explode(',',$data['fmt_stream_map']);
 	$fname = $data['title'];
 	$content = array_map(function($x) use ($matches) {
