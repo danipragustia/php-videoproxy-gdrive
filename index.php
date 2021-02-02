@@ -132,7 +132,7 @@ function write_data(string $id) {
             if (filter_var($src, FILTER_VALIDATE_URL, FILTER_FLAG_PATH_REQUIRED)) {
 		$ch = curl_init(substr($x, strpos($x, '|') + 1));
 		curl_setopt_array($ch, [
-                    CURLOPT_HEADER > 1,
+                    CURLOPT_HEADER => 1,
                     CURLOPT_CONNECTTIMEOUT => 0,
                     CURLOPT_TIMEOUT => 1000, // 1 sec
                     CURLOPT_NOBODY => 1,
